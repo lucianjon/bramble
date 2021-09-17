@@ -30,9 +30,9 @@ type ExecutionResult struct {
 
 type QueryExecution2 struct {
 	schema       *ast.Schema
-	requestCount uint32
+	requestCount int32
 
-	maxRequest uint32
+	maxRequest int32
 	// FIXME: implement?
 	tracer        opentracing.Tracer
 	graphqlClient *GraphQLClient
@@ -40,7 +40,7 @@ type QueryExecution2 struct {
 	boundaryQueries BoundaryQueriesMap
 }
 
-func newQueryExecution2(client *GraphQLClient, schema *ast.Schema, boundaryQueries BoundaryQueriesMap, maxRequest uint32) *QueryExecution2 {
+func newQueryExecution2(client *GraphQLClient, schema *ast.Schema, boundaryQueries BoundaryQueriesMap, maxRequest int32) *QueryExecution2 {
 	return &QueryExecution2{
 		schema:          schema,
 		graphqlClient:   client,
@@ -142,8 +142,7 @@ func (q *QueryExecution2) ExecuteRootStep(ctx context.Context, step QueryPlanSte
 }
 
 func (q *QueryExecution2) executeChildStep(ctx context.Context, step QueryPlanStep, boundaryIDs []string, resultsChan chan ExecutionResult, group *errgroup.Group) error {
-
-	atomic.AddUint32(&q.requestCount, 1)
+	atomic.AddInt32(&q.requestCount, 1)
 	if q.requestCount > q.maxRequest {
 		return fmt.Errorf("exceeded max requests of %v", q.maxRequest)
 	}
