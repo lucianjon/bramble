@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/vektah/gqlparser/v2/ast"
@@ -29,10 +30,9 @@ type ExecutionResult struct {
 
 type QueryExecution2 struct {
 	schema       *ast.Schema
-	requestCount int64
+	requestCount uint32
 
-	// FIXME: implement
-	maxRequest int64
+	maxRequest uint32
 	// FIXME: implement?
 	tracer        opentracing.Tracer
 	graphqlClient *GraphQLClient
@@ -40,11 +40,12 @@ type QueryExecution2 struct {
 	boundaryQueries BoundaryQueriesMap
 }
 
-func newQueryExecution2(client *GraphQLClient, schema *ast.Schema, boundaryQueries BoundaryQueriesMap) *QueryExecution2 {
+func newQueryExecution2(client *GraphQLClient, schema *ast.Schema, boundaryQueries BoundaryQueriesMap, maxRequest uint32) *QueryExecution2 {
 	return &QueryExecution2{
 		schema:          schema,
 		graphqlClient:   client,
 		boundaryQueries: boundaryQueries,
+		maxRequest:      maxRequest,
 	}
 }
 
@@ -53,6 +54,13 @@ func (q *QueryExecution2) Execute(ctx context.Context, queryPlan QueryPlan) ([]E
 	group, ctx := errgroup.WithContext(ctx)
 	resultsChan := make(chan ExecutionResult)
 	results := []ExecutionResult{}
+
+	if len(queryPlan.RootSteps) > int(q.maxRequest) {
+		return nil, gqlerror.List{&gqlerror.Error{
+			Message: fmt.Sprintf("exceeded max requests of %v", q.maxRequest),
+		}}
+	}
+
 	for _, step := range queryPlan.RootSteps {
 		if step.ServiceURL == internalServiceName {
 			r, err := ExecuteBrambleStep(step)
@@ -134,6 +142,12 @@ func (q *QueryExecution2) ExecuteRootStep(ctx context.Context, step QueryPlanSte
 }
 
 func (q *QueryExecution2) executeChildStep(ctx context.Context, step QueryPlanStep, boundaryIDs []string, resultsChan chan ExecutionResult, group *errgroup.Group) error {
+
+	atomic.AddUint32(&q.requestCount, 1)
+	if q.requestCount > q.maxRequest {
+		return fmt.Errorf("exceeded max requests of %v", q.maxRequest)
+	}
+
 	boundaryFieldGetter := q.boundaryQueries.Query(step.ServiceURL, step.ParentType)
 
 	documents, err := buildBoundaryQueryDocuments(ctx, q.schema, step, boundaryIDs, boundaryFieldGetter, 50)
