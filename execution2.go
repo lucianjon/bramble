@@ -166,6 +166,7 @@ func (q *QueryExecution2) executeChildStep(ctx context.Context, step QueryPlanSt
 		if err != nil {
 			return err
 		}
+		childStep := childStep
 		group.Go(func() error {
 			return q.executeChildStep(ctx, *childStep, boundaryIDs, resultsChan, group)
 		})
