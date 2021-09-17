@@ -27,7 +27,7 @@ type ExecutionResult struct {
 	Errors         gqlerror.List
 }
 
-type QueryExecution2 struct {
+type QueryExecution struct {
 	schema       *ast.Schema
 	requestCount int32
 
@@ -37,8 +37,8 @@ type QueryExecution2 struct {
 	boundaryQueries BoundaryQueriesMap
 }
 
-func newQueryExecution2(client *GraphQLClient, schema *ast.Schema, boundaryQueries BoundaryQueriesMap, maxRequest int32) *QueryExecution2 {
-	return &QueryExecution2{
+func newQueryExecution(client *GraphQLClient, schema *ast.Schema, boundaryQueries BoundaryQueriesMap, maxRequest int32) *QueryExecution {
+	return &QueryExecution{
 		schema:          schema,
 		graphqlClient:   client,
 		boundaryQueries: boundaryQueries,
@@ -46,7 +46,7 @@ func newQueryExecution2(client *GraphQLClient, schema *ast.Schema, boundaryQueri
 	}
 }
 
-func (q *QueryExecution2) Execute(ctx context.Context, queryPlan QueryPlan) ([]ExecutionResult, gqlerror.List) {
+func (q *QueryExecution) Execute(ctx context.Context, queryPlan QueryPlan) ([]ExecutionResult, gqlerror.List) {
 	readWg := &sync.WaitGroup{}
 	group, ctx := errgroup.WithContext(ctx)
 	resultsChan := make(chan ExecutionResult)
@@ -92,7 +92,7 @@ func (q *QueryExecution2) Execute(ctx context.Context, queryPlan QueryPlan) ([]E
 	return results, nil
 }
 
-func (q *QueryExecution2) ExecuteRootStep(ctx context.Context, step QueryPlanStep, resultsChan chan ExecutionResult, group *errgroup.Group) error {
+func (q *QueryExecution) ExecuteRootStep(ctx context.Context, step QueryPlanStep, resultsChan chan ExecutionResult, group *errgroup.Group) error {
 	var document string
 	if step.ParentType == "Query" {
 		document = "query " + formatSelectionSet(ctx, q.schema, step.SelectionSet)
@@ -138,7 +138,7 @@ func (q *QueryExecution2) ExecuteRootStep(ctx context.Context, step QueryPlanSte
 	return nil
 }
 
-func (q *QueryExecution2) executeChildStep(ctx context.Context, step QueryPlanStep, boundaryIDs []string, resultsChan chan ExecutionResult, group *errgroup.Group) error {
+func (q *QueryExecution) executeChildStep(ctx context.Context, step QueryPlanStep, boundaryIDs []string, resultsChan chan ExecutionResult, group *errgroup.Group) error {
 	atomic.AddInt32(&q.requestCount, 1)
 	if q.requestCount > q.maxRequest {
 		return fmt.Errorf("exceeded max requests of %v", q.maxRequest)
@@ -185,7 +185,7 @@ func (q *QueryExecution2) executeChildStep(ctx context.Context, step QueryPlanSt
 	return nil
 }
 
-func (e *QueryExecution2) createGQLErrors(ctx context.Context, step QueryPlanStep, err error) gqlerror.List {
+func (e *QueryExecution) createGQLErrors(ctx context.Context, step QueryPlanStep, err error) gqlerror.List {
 	var path ast.Path
 	for _, p := range step.InsertionPoint {
 		path = append(path, ast.PathName(p))
@@ -239,7 +239,7 @@ func (e *QueryExecution2) createGQLErrors(ctx context.Context, step QueryPlanSte
 	return outputErrs
 }
 
-func (q *QueryExecution2) executeBoundaryQuery(ctx context.Context, documents []string, serviceURL string, boundaryFieldGetter BoundaryQuery) ([]interface{}, error) {
+func (q *QueryExecution) executeBoundaryQuery(ctx context.Context, documents []string, serviceURL string, boundaryFieldGetter BoundaryQuery) ([]interface{}, error) {
 	output := make([]interface{}, 0, 0)
 	if !boundaryFieldGetter.Array {
 		for _, document := range documents {
@@ -267,7 +267,7 @@ func (q *QueryExecution2) executeBoundaryQuery(ctx context.Context, documents []
 	return data.Result, err
 }
 
-func (q *QueryExecution2) executeDocument(ctx context.Context, document string, serviceURL string, response interface{}) error {
+func (q *QueryExecution) executeDocument(ctx context.Context, document string, serviceURL string, response interface{}) error {
 	req := NewRequest(document)
 	req.Headers = GetOutgoingRequestHeadersFromContext(ctx)
 	err := q.graphqlClient.Request(ctx, serviceURL, req, &response)

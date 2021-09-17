@@ -3,13 +3,9 @@ package bramble
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"reflect"
-	"runtime/debug"
-	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/99designs/gqlgen/graphql"
@@ -132,120 +128,10 @@ func (s *ExecutableSchema) UpdateSchema(forceRebuild bool) error {
 
 // Exec returns the query execution handler
 func (s *ExecutableSchema) Exec(ctx context.Context) graphql.ResponseHandler {
-	return s.NewPipelineExecuteQuery
+	return s.ExecuteQuery
 }
 
-// ExecuteQuery executes an incoming query
 func (s *ExecutableSchema) ExecuteQuery(ctx context.Context) *graphql.Response {
-	start := time.Now()
-
-	opctx := graphql.GetOperationContext(ctx)
-	op := opctx.Operation
-
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
-
-	result := make(map[string]interface{})
-
-	variables := map[string]interface{}{}
-	if graphql.HasOperationContext(ctx) {
-		reqctx := graphql.GetOperationContext(ctx)
-		if reqctx != nil {
-			variables = reqctx.Variables
-		}
-	}
-
-	// The op passed in is a cached value
-	// so it must be copied before modification
-	op = s.evaluateSkipAndInclude(variables, op)
-
-	var errs gqlerror.List
-	perms, hasPerms := GetPermissionsFromContext(ctx)
-	if hasPerms {
-		errs = perms.FilterAuthorizedFields(op)
-	}
-
-	filteredSchema := s.MergedSchema
-	if hasPerms {
-		filteredSchema = perms.FilterSchema(s.MergedSchema)
-	}
-	for _, f := range selectionSetToFields(op.SelectionSet) {
-		switch f.Name {
-		case "__type":
-			name := f.Arguments.ForName("name").Value.Raw
-			result[f.Alias] = s.resolveType(ctx, filteredSchema, &ast.Type{NamedType: name}, f.SelectionSet)
-		case "__schema":
-			result[f.Alias] = s.resolveSchema(ctx, filteredSchema, f.SelectionSet)
-		}
-	}
-
-	plan, err := Plan(&PlanningContext{
-		Operation:  op,
-		Schema:     s.Schema(),
-		Locations:  s.Locations,
-		IsBoundary: s.IsBoundary,
-		Services:   s.Services,
-	})
-
-	if err != nil {
-		return graphql.ErrorResponse(ctx, err.Error())
-	}
-
-	AddField(ctx, "operation.name", op.Name)
-	AddField(ctx, "operation.type", op.Operation)
-
-	qe := newQueryExecution(s.GraphqlClient, s.Schema(), s.Tracer, s.MaxRequestsPerQuery, s.BoundaryQueries)
-	executionErrors := qe.execute(ctx, plan, result)
-	errs = append(errs, executionErrors...)
-	extensions := make(map[string]interface{})
-	if debugInfo, ok := ctx.Value(DebugKey).(DebugInfo); ok {
-		if debugInfo.Query {
-			extensions["query"] = op
-		}
-		if debugInfo.Variables {
-			extensions["variables"] = variables
-		}
-		if debugInfo.Plan {
-			extensions["plan"] = plan
-		}
-		if debugInfo.Timing {
-			extensions["timing"] = time.Since(start).Round(time.Millisecond).String()
-		}
-		if debugInfo.TraceID {
-			extensions["traceid"] = TraceIDFromContext(ctx)
-		}
-	}
-
-	for _, plugin := range s.plugins {
-		if err := plugin.ModifyExtensions(ctx, qe, extensions); err != nil {
-			AddField(ctx, fmt.Sprintf("%s-plugin-error", plugin.ID()), err.Error())
-		}
-	}
-
-	for name, value := range extensions {
-		graphql.RegisterExtension(ctx, name, value)
-	}
-
-	res, err := marshalResult(result, op.SelectionSet, s.MergedSchema, &ast.Type{NamedType: strings.Title(string(op.Operation))})
-	if err != nil {
-		errs = append(errs, &gqlerror.Error{Message: err.Error()})
-		AddField(ctx, "errors", errs)
-		return &graphql.Response{
-			Errors: errs,
-		}
-	}
-
-	if len(errs) > 0 {
-		AddField(ctx, "errors", errs)
-	}
-	return &graphql.Response{
-		Data:   res,
-		Errors: errs,
-	}
-
-}
-
-func (s *ExecutableSchema) NewPipelineExecuteQuery(ctx context.Context) *graphql.Response {
 	start := time.Now()
 
 	opctx := graphql.GetOperationContext(ctx)
@@ -303,7 +189,7 @@ func (s *ExecutableSchema) NewPipelineExecuteQuery(ctx context.Context) *graphql
 	AddField(ctx, "operation.name", op.Name)
 	AddField(ctx, "operation.type", op.Operation)
 
-	qe := newQueryExecution2(s.GraphqlClient, s.Schema(), s.BoundaryQueries, int32(s.MaxRequestsPerQuery))
+	qe := newQueryExecution(s.GraphqlClient, s.Schema(), s.BoundaryQueries, int32(s.MaxRequestsPerQuery))
 	results, executeErrs := qe.Execute(ctx, *plan)
 	if len(executeErrs) > 0 {
 		return &graphql.Response{
@@ -325,17 +211,14 @@ func (s *ExecutableSchema) NewPipelineExecuteQuery(ctx context.Context) *graphql
 		if debugInfo.Timing {
 			extensions["timing"] = time.Since(start).Round(time.Millisecond).String()
 		}
-		if debugInfo.TraceID {
-			extensions["traceid"] = TraceIDFromContext(ctx)
-		}
 	}
 
 	// FIXME: deal with the fact qe is a different type
-	// for _, plugin := range s.plugins {
-	// 	// if err := plugin.ModifyExtensions(ctx, qe, extensions); err != nil {
-	// 	// 	AddField(ctx, fmt.Sprintf("%s-plugin-error", plugin.ID()), err.Error())
-	// 	// }
-	// }
+	for _, plugin := range s.plugins {
+		if err := plugin.ModifyExtensions(ctx, qe, extensions); err != nil {
+			AddField(ctx, fmt.Sprintf("%s-plugin-error", plugin.ID()), err.Error())
+		}
+	}
 
 	for name, value := range extensions {
 		graphql.RegisterExtension(ctx, name, value)
@@ -701,356 +584,12 @@ func hasDeprecatedDirective(directives ast.DirectiveList) (bool, *string) {
 	return false, nil
 }
 
-// QueryExecution is a single query execution
-type QueryExecution struct {
-	Schema       *ast.Schema
-	Errors       []*gqlerror.Error
-	RequestCount int64
-
-	maxRequest      int64
-	tracer          opentracing.Tracer
-	wg              sync.WaitGroup
-	m               sync.Mutex
-	graphqlClient   *GraphQLClient
-	boundaryQueries BoundaryQueriesMap
-}
-
-func newQueryExecution(client *GraphQLClient, schema *ast.Schema, tracer opentracing.Tracer, maxRequest int64, boundaryQueries BoundaryQueriesMap) *QueryExecution {
-	return &QueryExecution{
-		Schema:          schema,
-		graphqlClient:   client,
-		tracer:          tracer,
-		maxRequest:      maxRequest,
-		boundaryQueries: boundaryQueries,
-	}
-}
-
-func (e *QueryExecution) execute(ctx context.Context, plan *QueryPlan, resData map[string]interface{}) []*gqlerror.Error {
-	e.wg.Add(len(plan.RootSteps))
-	for _, step := range plan.RootSteps {
-		if step.ServiceURL == internalServiceName {
-			e.executeBrambleStep(ctx, step, resData)
-			continue
-		}
-		go e.executeRootStep(ctx, step, resData)
-	}
-
-	e.wg.Wait()
-
-	if e.RequestCount > e.maxRequest {
-		e.Errors = append(e.Errors, &gqlerror.Error{
-			Message: fmt.Sprintf("query exceeded max requests count of %d with %d requests, data will be incomplete", e.maxRequest, e.RequestCount),
-		})
-	}
-
-	return e.Errors
-}
-
-func (e *QueryExecution) addError(ctx context.Context, step *QueryPlanStep, err error) {
-	var path ast.Path
-	for _, p := range step.InsertionPoint {
-		path = append(path, ast.PathName(p))
-	}
-
-	var locs []gqlerror.Location
-	for _, f := range selectionSetToFields(step.SelectionSet) {
-		pos := f.GetPosition()
-		if pos == nil {
-			continue
-		}
-		locs = append(locs, gqlerror.Location{Line: pos.Line, Column: pos.Column})
-
-		// if the field has a subset it's part of the path
-		if len(f.SelectionSet) > 0 {
-			path = append(path, ast.PathName(f.Alias))
-		}
-	}
-
-	e.m.Lock()
-	defer e.m.Unlock()
-
-	var gqlErr GraphqlErrors
-	if errors.As(err, &gqlErr) {
-		for _, ge := range gqlErr {
-			extensions := ge.Extensions
-			if extensions == nil {
-				extensions = make(map[string]interface{})
-			}
-			extensions["selectionSet"] = formatSelectionSetSingleLine(ctx, e.Schema, step.SelectionSet)
-			extensions["serviceName"] = step.ServiceName
-			extensions["serviceUrl"] = step.ServiceURL
-
-			e.Errors = append(e.Errors, &gqlerror.Error{
-				Message:    ge.Message,
-				Path:       path,
-				Locations:  locs,
-				Extensions: extensions,
-			})
-		}
-	} else {
-		e.Errors = append(e.Errors, &gqlerror.Error{
-			Message:   err.Error(),
-			Path:      path,
-			Locations: locs,
-			Extensions: map[string]interface{}{
-				"selectionSet": formatSelectionSetSingleLine(ctx, e.Schema, step.SelectionSet),
-			},
-		})
-	}
-}
-
-func (e *QueryExecution) executeRootStep(ctx context.Context, step *QueryPlanStep, result map[string]interface{}) {
-	defer e.wg.Done()
-	defer func() {
-		if r := recover(); r != nil {
-			AddField(ctx, "panic", map[string]interface{}{
-				"err":        r,
-				"stacktrace": string(debug.Stack()),
-			})
-			e.addError(ctx, step, errors.New("an error happened during query execution"))
-		}
-	}()
-
-	if e.tracer != nil {
-		contextSpan := opentracing.SpanFromContext(ctx)
-		if contextSpan != nil {
-			span := e.tracer.StartSpan(step.ServiceName, opentracing.ChildOf(contextSpan.Context()))
-			ctx = opentracing.ContextWithSpan(ctx, span)
-			defer span.Finish()
-		}
-	}
-
-	q := formatSelectionSet(ctx, e.Schema, step.SelectionSet)
-	if step.ParentType == mutationObjectName {
-		q = "mutation " + q
-	} else {
-		q = "query " + q
-	}
-
-	resp := map[string]json.RawMessage{}
-	promHTTPInFlightGauge.Inc()
-	req := NewRequest(q)
-	req.Headers = GetOutgoingRequestHeadersFromContext(ctx)
-	err := e.graphqlClient.Request(ctx, step.ServiceURL, req, &resp)
-	promHTTPInFlightGauge.Dec()
-	if err != nil {
-		e.addError(ctx, step, err)
-	}
-
-	e.m.Lock()
-	mergeMaps(result, jsonMapToInterfaceMap(resp))
-	e.m.Unlock()
-
-	for _, subStep := range step.Then {
-		e.wg.Add(1)
-		go e.executeChildStep(ctx, subStep, result)
-	}
-}
-
 func jsonMapToInterfaceMap(m map[string]json.RawMessage) map[string]interface{} {
 	res := make(map[string]interface{}, len(m))
 	for k, v := range m {
 		res[k] = v
 	}
 
-	return res
-}
-
-// executeChildStep executes a child step. It finds the insertion targets for
-// the step's insertion point and queries the specified service using the node
-// query type.
-func (e *QueryExecution) executeChildStep(ctx context.Context, step *QueryPlanStep, result map[string]interface{}) {
-	defer e.wg.Done()
-	defer func() {
-		if r := recover(); r != nil {
-			AddField(ctx, "panic", map[string]interface{}{
-				"err":        r,
-				"stacktrace": string(debug.Stack()),
-			})
-			e.addError(ctx, step, errors.New("an error happened during query execution"))
-		}
-	}()
-
-	if e.tracer != nil {
-		contextSpan := opentracing.SpanFromContext(ctx)
-		if contextSpan != nil {
-			span := e.tracer.StartSpan(step.ServiceName, opentracing.ChildOf(contextSpan.Context()))
-			ctx = opentracing.ContextWithSpan(ctx, span)
-			defer span.Finish()
-		}
-	}
-
-	e.m.Lock()
-	result = prepareMapForInsertion(step.InsertionPoint, result).(map[string]interface{})
-	e.m.Unlock()
-
-	insertionPoints := buildInsertionSlice(step.InsertionPoint, result)
-	if len(insertionPoints) == 0 {
-		return
-	}
-
-	atomic.AddInt64(&e.RequestCount, 1)
-
-	if e.RequestCount > e.maxRequest {
-		return
-	}
-
-	boundaryQuery := e.boundaryQueries.Query(step.ServiceURL, step.ParentType)
-	selectionSet := formatSelectionSet(ctx, e.Schema, step.SelectionSet)
-	var b strings.Builder
-
-	b.WriteString("{")
-	if boundaryQuery.Array {
-		var ids string
-		for _, ip := range insertionPoints {
-			ids += fmt.Sprintf("%q ", ip.ID)
-		}
-		b.WriteString(fmt.Sprintf("_result: %s(ids: [%s]) %s", boundaryQuery.Query, ids, selectionSet))
-	} else {
-		for i, ip := range insertionPoints {
-			b.WriteString(fmt.Sprintf("%s: %s(id: %q) { ... on %s %s } ", nodeAlias(i), boundaryQuery.Query, ip.ID, step.ParentType, selectionSet))
-		}
-	}
-	b.WriteString("}")
-
-	query := b.String()
-
-	if boundaryQuery.Array {
-		if len(step.Then) == 0 {
-			resp := struct {
-				Result []map[string]json.RawMessage `json:"_result"`
-			}{}
-			promHTTPInFlightGauge.Inc()
-			req := NewRequest(query)
-			req.Headers = GetOutgoingRequestHeadersFromContext(ctx)
-			err := e.graphqlClient.Request(ctx, step.ServiceURL, req, &resp)
-			promHTTPInFlightGauge.Dec()
-			if err != nil {
-				e.addError(ctx, step, err)
-			}
-			if len(resp.Result) != len(insertionPoints) {
-				e.addError(ctx, step, fmt.Errorf("error while querying %s: service returned incorrect number of elements", step.ServiceURL))
-				return
-			}
-			e.m.Lock()
-			for i := range insertionPoints {
-				for k, v := range resp.Result[i] {
-					insertionPoints[i].Target[k] = v
-				}
-			}
-			e.m.Unlock()
-			return
-		}
-
-		resp := struct {
-			Result []map[string]interface{} `json:"_result"`
-		}{}
-		promHTTPInFlightGauge.Inc()
-		req := NewRequest(query)
-		req.Headers = GetOutgoingRequestHeadersFromContext(ctx)
-		err := e.graphqlClient.Request(ctx, step.ServiceURL, req, &resp)
-		promHTTPInFlightGauge.Dec()
-		if err != nil {
-			e.addError(ctx, step, err)
-			return
-		}
-		if len(resp.Result) != len(insertionPoints) {
-			e.addError(ctx, step, fmt.Errorf("error while querying %s: service returned incorrect number of elements", step.ServiceURL))
-			return
-		}
-		e.m.Lock()
-		for i := range insertionPoints {
-			for k, v := range resp.Result[i] {
-				insertionPoints[i].Target[k] = v
-			}
-		}
-		e.m.Unlock()
-
-		for _, subStep := range step.Then {
-			e.wg.Add(1)
-			go e.executeChildStep(ctx, subStep, result)
-		}
-		return
-	}
-
-	// If there's no sub-calls on the data we want to store it as returned.
-	// This is to preserve fields order with inline fragments on unions, as we
-	// have no way to determine which type was matched.
-	// e.g.: { ... on Cat { name, age } ... on Dog { age, name } }
-	if len(step.Then) == 0 {
-		resp := map[string]map[string]json.RawMessage{}
-		promHTTPInFlightGauge.Inc()
-		req := NewRequest(query)
-		req.Headers = GetOutgoingRequestHeadersFromContext(ctx)
-		err := e.graphqlClient.Request(ctx, step.ServiceURL, req, &resp)
-		promHTTPInFlightGauge.Dec()
-		if err != nil {
-			e.addError(ctx, step, err)
-			return
-		}
-		if len(resp) != len(insertionPoints) {
-			e.addError(ctx, step, fmt.Errorf("error while querying %s: service returned incorrect number of elements", step.ServiceURL))
-			return
-		}
-		e.m.Lock()
-		for i := range insertionPoints {
-			for k, v := range resp[nodeAlias(i)] {
-				insertionPoints[i].Target[k] = v
-			}
-		}
-		e.m.Unlock()
-		return
-	}
-
-	resp := map[string]map[string]interface{}{}
-	promHTTPInFlightGauge.Inc()
-	req := NewRequest(query)
-	req.Headers = GetOutgoingRequestHeadersFromContext(ctx)
-	err := e.graphqlClient.Request(ctx, step.ServiceURL, req, &resp)
-	promHTTPInFlightGauge.Dec()
-	if err != nil {
-		e.addError(ctx, step, err)
-		return
-	}
-	if len(resp) != len(insertionPoints) {
-		e.addError(ctx, step, fmt.Errorf("error while querying %s: service returned incorrect number of elements", step.ServiceURL))
-		return
-	}
-	e.m.Lock()
-	for i := range insertionPoints {
-		for k, v := range resp[nodeAlias(i)] {
-			insertionPoints[i].Target[k] = v
-		}
-	}
-	e.m.Unlock()
-
-	for _, subStep := range step.Then {
-		e.wg.Add(1)
-		go e.executeChildStep(ctx, subStep, result)
-	}
-}
-
-// executeBrambleStep executes the Bramble-specific operations
-func (e *QueryExecution) executeBrambleStep(ctx context.Context, step *QueryPlanStep, result map[string]interface{}) {
-	m := buildTypenameResponseMap(step.SelectionSet, step.ParentType)
-	mergeMaps(result, m)
-	e.wg.Done()
-}
-
-// buildTypenameResponseMap recursively builds the response map for `__typename`
-// fields. This is used for namespaces as they do not belong to any service.
-func buildTypenameResponseMap(ss ast.SelectionSet, currentType string) map[string]interface{} {
-	res := make(map[string]interface{})
-	for _, f := range selectionSetToFields(ss) {
-		if len(f.SelectionSet) > 0 {
-			res[f.Alias] = buildTypenameResponseMap(f.SelectionSet, f.Definition.Type.Name())
-			continue
-		}
-
-		if f.Name == "__typename" {
-			res[f.Alias] = currentType
-		}
-	}
 	return res
 }
 
