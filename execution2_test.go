@@ -932,6 +932,108 @@ func TestQueryExecution2MultipleServices(t *testing.T) {
 	f.checkSuccess(t)
 }
 
+func TestQueryExecution2NamespaceAndFragmentSpread(t *testing.T) {
+	f := &queryExecution2Fixture{
+		services: []testService{
+			{
+				schema: `
+				directive @namespace on OBJECT
+				type Foo {
+					id: ID!
+				}
+
+				type MyNamespace @namespace {
+					foo: Foo!
+				}
+
+				type Query {
+					ns: MyNamespace!
+				}`,
+				handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Write([]byte(`{
+						"data": {
+							"ns": {
+								"foo": {
+									"id": "1"
+								}
+							}
+						}
+					}
+					`))
+				}),
+			},
+			{
+				schema: `
+				directive @namespace on OBJECT
+				interface Person { name: String! }
+
+				type Movie {
+					title: String!
+				}
+
+				type Director implements Person {
+					name: String!
+					movies: [Movie!]
+				}
+
+				type MyNamespace @namespace {
+					somePerson: Person!
+				}
+
+				type Query {
+					ns: MyNamespace!
+				}`,
+				handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Write([]byte(`{
+						"data": {
+							"ns": {
+								"somePerson": {
+									"name": "Luc Besson",
+									"movies": [
+										{"title": "The Big Blue"}
+									],
+									"__typename": "Person"
+								}
+							}
+						}
+					}
+					`))
+				}),
+			},
+		},
+		query: `{
+			ns {
+				somePerson {
+					... on Director {
+						name
+						movies {
+							title
+						}
+					}
+				}
+				foo {
+					id
+				}
+			}
+		}`,
+		expected: `{
+			"ns": {
+			"somePerson": {
+				"name": "Luc Besson",
+				"movies": [
+					{"title": "The Big Blue"}
+				]
+			},
+			"foo": {
+				"id": "1"
+			}
+		}
+		}`,
+	}
+
+	f.run(t)
+}
+
 func TestQueryExecution2WithNullResponse(t *testing.T) {
 	f := &queryExecution2Fixture{
 		services: []testService{
