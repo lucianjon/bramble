@@ -31,18 +31,17 @@ type QueryExecution struct {
 	schema       *ast.Schema
 	requestCount int32
 
-	maxRequest    int32
-	graphqlClient *GraphQLClient
-	// FIXME: rename the entire type
-	boundaryQueries BoundaryQueriesMap
+	maxRequest     int32
+	graphqlClient  *GraphQLClient
+	boundaryFields BoundaryFieldsMap
 }
 
-func newQueryExecution(client *GraphQLClient, schema *ast.Schema, boundaryQueries BoundaryQueriesMap, maxRequest int32) *QueryExecution {
+func newQueryExecution(client *GraphQLClient, schema *ast.Schema, boundaryFields BoundaryFieldsMap, maxRequest int32) *QueryExecution {
 	return &QueryExecution{
-		schema:          schema,
-		graphqlClient:   client,
-		boundaryQueries: boundaryQueries,
-		maxRequest:      maxRequest,
+		schema:         schema,
+		graphqlClient:  client,
+		boundaryFields: boundaryFields,
+		maxRequest:     maxRequest,
 	}
 }
 
@@ -144,14 +143,14 @@ func (q *QueryExecution) executeChildStep(ctx context.Context, step QueryPlanSte
 		return fmt.Errorf("exceeded max requests of %v", q.maxRequest)
 	}
 
-	boundaryFieldGetter := q.boundaryQueries.Query(step.ServiceURL, step.ParentType)
+	boundaryField := q.boundaryFields.Field(step.ServiceURL, step.ParentType)
 
-	documents, err := buildBoundaryQueryDocuments(ctx, q.schema, step, boundaryIDs, boundaryFieldGetter, 50)
+	documents, err := buildBoundaryQueryDocuments(ctx, q.schema, step, boundaryIDs, boundaryField, 50)
 	if err != nil {
 		return err
 	}
 
-	data, err := q.executeBoundaryQuery(ctx, documents, step.ServiceURL, boundaryFieldGetter)
+	data, err := q.executeBoundaryQuery(ctx, documents, step.ServiceURL, boundaryField)
 	if err != nil {
 		resultsChan <- ExecutionResult{
 			ServiceURL:     step.ServiceURL,
@@ -239,7 +238,7 @@ func (e *QueryExecution) createGQLErrors(ctx context.Context, step QueryPlanStep
 	return outputErrs
 }
 
-func (q *QueryExecution) executeBoundaryQuery(ctx context.Context, documents []string, serviceURL string, boundaryFieldGetter BoundaryQuery) ([]interface{}, error) {
+func (q *QueryExecution) executeBoundaryQuery(ctx context.Context, documents []string, serviceURL string, boundaryFieldGetter BoundaryField) ([]interface{}, error) {
 	output := make([]interface{}, 0, 0)
 	if !boundaryFieldGetter.Array {
 		for _, document := range documents {
@@ -376,7 +375,7 @@ func extractBoundaryIDs(data interface{}, insertionPoint []string) ([]string, er
 	}
 }
 
-func buildBoundaryQueryDocuments(ctx context.Context, schema *ast.Schema, step QueryPlanStep, ids []string, parentTypeBoundaryField BoundaryQuery, batchSize int) ([]string, error) {
+func buildBoundaryQueryDocuments(ctx context.Context, schema *ast.Schema, step QueryPlanStep, ids []string, parentTypeBoundaryField BoundaryField, batchSize int) ([]string, error) {
 	selectionSetQL := formatSelectionSetSingleLine(ctx, schema, step.SelectionSet)
 	if parentTypeBoundaryField.Array {
 		qids := []string{}
@@ -384,7 +383,7 @@ func buildBoundaryQueryDocuments(ctx context.Context, schema *ast.Schema, step Q
 			qids = append(qids, fmt.Sprintf("%q", id))
 		}
 		idsQL := fmt.Sprintf("[%s]", strings.Join(qids, ", "))
-		return []string{fmt.Sprintf(`{ _result: %s(ids: %s) %s }`, parentTypeBoundaryField.Query, idsQL, selectionSetQL)}, nil
+		return []string{fmt.Sprintf(`{ _result: %s(ids: %s) %s }`, parentTypeBoundaryField.Field, idsQL, selectionSetQL)}, nil
 	}
 
 	var (
@@ -394,7 +393,7 @@ func buildBoundaryQueryDocuments(ctx context.Context, schema *ast.Schema, step Q
 	for _, batch := range batchBy(ids, batchSize) {
 		var selections []string
 		for _, id := range batch {
-			selection := fmt.Sprintf("%s: %s(id: %q) %s", nodeAlias(selectionIndex), parentTypeBoundaryField.Query, id, selectionSetQL)
+			selection := fmt.Sprintf("%s: %s(id: %q) %s", nodeAlias(selectionIndex), parentTypeBoundaryField.Field, id, selectionSetQL)
 			selections = append(selections, selection)
 			selectionIndex++
 		}

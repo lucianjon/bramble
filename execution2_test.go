@@ -1291,7 +1291,7 @@ func TestBuildBoundaryQueryDocuments(t *testing.T) {
 		}
 	`
 	schema := gqlparser.MustLoadSchema(&ast.Source{Name: "fixture", Input: ddl})
-	boundaryField := BoundaryQuery{Query: "getOwners", Array: true}
+	boundaryField := BoundaryField{Field: "getOwners", Array: true}
 	ids := []string{"1", "2", "3"}
 	selectionSet := []ast.Selection{
 		&ast.Field{
@@ -1341,7 +1341,7 @@ func TestBuildNonArrayBoundaryQueryDocuments(t *testing.T) {
 		}
 	`
 	schema := gqlparser.MustLoadSchema(&ast.Source{Name: "fixture", Input: ddl})
-	boundaryField := BoundaryQuery{Query: "getOwner", Array: false}
+	boundaryField := BoundaryField{Field: "getOwner", Array: false}
 	ids := []string{"1", "2", "3"}
 	selectionSet := []ast.Selection{
 		&ast.Field{
@@ -1391,7 +1391,7 @@ func TestBuildBatchedNonArrayBoundaryQueryDocuments(t *testing.T) {
 		}
 	`
 	schema := gqlparser.MustLoadSchema(&ast.Source{Name: "fixture", Input: ddl})
-	boundaryField := BoundaryQuery{Query: "getOwner", Array: false}
+	boundaryField := BoundaryField{Field: "getOwner", Array: false}
 	ids := []string{"1", "2", "3"}
 	selectionSet := []ast.Selection{
 		&ast.Field{
@@ -4036,7 +4036,7 @@ func (f *queryExecutionFixture) run(t *testing.T) {
 
 	es := newExecutableSchema(nil, 50, nil, services...)
 	es.MergedSchema = merged
-	es.BoundaryQueries = buildBoundaryQueriesMap(services...)
+	es.BoundaryQueries = buildBoundaryFieldsMap(services...)
 	es.Locations = buildFieldURLMap(services...)
 	es.IsBoundary = buildIsBoundaryMap(services...)
 	query := gqlparser.MustLoadQuery(merged, f.query)

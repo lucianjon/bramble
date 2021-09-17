@@ -42,7 +42,7 @@ type ExecutableSchema struct {
 	Locations           FieldURLMap
 	IsBoundary          map[string]bool
 	Services            map[string]*Service
-	BoundaryQueries     BoundaryQueriesMap
+	BoundaryQueries     BoundaryFieldsMap
 	GraphqlClient       *GraphQLClient
 	Tracer              opentracing.Tracer
 	MaxRequestsPerQuery int64
@@ -111,7 +111,7 @@ func (s *ExecutableSchema) UpdateSchema(forceRebuild bool) error {
 			return fmt.Errorf("update of service %v caused schema error: %w", updatedServices, err)
 		}
 
-		boundaryQueries := buildBoundaryQueriesMap(services...)
+		boundaryQueries := buildBoundaryFieldsMap(services...)
 		locations := buildFieldURLMap(services...)
 		isBoundary := buildIsBoundaryMap(services...)
 

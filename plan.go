@@ -369,35 +369,35 @@ func stringArraysEqual(a, b []string) bool {
 	return true
 }
 
-// BoundaryQuery contains the name and format for a boundary query
-type BoundaryQuery struct {
-	Query string
+// BoundaryField contains the name and format for a boundary query
+type BoundaryField struct {
+	Field string
 	// Whether the query is in the array format
 	Array bool
 }
 
-// BoundaryQueriesMap is a mapping service -> type -> boundary query
-type BoundaryQueriesMap map[string]map[string]BoundaryQuery
+// BoundaryFieldsMap is a mapping service -> type -> boundary query
+type BoundaryFieldsMap map[string]map[string]BoundaryField
 
-// RegisterQuery registers a boundary query
-func (m BoundaryQueriesMap) RegisterQuery(serviceURL, typeName, query string, array bool) {
+// RegisterField registers a boundary field
+func (m BoundaryFieldsMap) RegisterField(serviceURL, typeName, field string, array bool) {
 	if _, ok := m[serviceURL]; !ok {
-		m[serviceURL] = make(map[string]BoundaryQuery)
+		m[serviceURL] = make(map[string]BoundaryField)
 	}
 
-	m[serviceURL][typeName] = BoundaryQuery{Query: query, Array: array}
+	m[serviceURL][typeName] = BoundaryField{Field: field, Array: array}
 }
 
-// Query returns the boundary query for the given service and type
-func (m BoundaryQueriesMap) Query(serviceURL, typeName string) BoundaryQuery {
+// Query returns the boundary field for the given service and type
+func (m BoundaryFieldsMap) Field(serviceURL, typeName string) BoundaryField {
 	serviceMap, ok := m[serviceURL]
 	if !ok {
-		return BoundaryQuery{Query: "node"}
+		return BoundaryField{Field: "node"}
 	}
 
 	query, ok := serviceMap[typeName]
 	if !ok {
-		return BoundaryQuery{Query: "node"}
+		return BoundaryField{Field: "node"}
 	}
 
 	return query
