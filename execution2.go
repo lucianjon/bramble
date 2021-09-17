@@ -10,7 +10,6 @@ import (
 	"sync"
 	"sync/atomic"
 
-	opentracing "github.com/opentracing/opentracing-go"
 	"github.com/vektah/gqlparser/v2/ast"
 	"github.com/vektah/gqlparser/v2/gqlerror"
 	"golang.org/x/sync/errgroup"
@@ -32,9 +31,7 @@ type QueryExecution2 struct {
 	schema       *ast.Schema
 	requestCount int32
 
-	maxRequest int32
-	// FIXME: implement?
-	tracer        opentracing.Tracer
+	maxRequest    int32
 	graphqlClient *GraphQLClient
 	// FIXME: rename the entire type
 	boundaryQueries BoundaryQueriesMap
