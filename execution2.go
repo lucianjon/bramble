@@ -121,7 +121,7 @@ func (q *QueryExecution) ExecuteRootStep(ctx context.Context, step QueryPlanStep
 
 	for _, childStep := range step.Then {
 		boundaryIDs, err := extractBoundaryIDs(data, childStep.InsertionPoint)
-		if err == errNilBoundaryData {
+		if err == errNilBoundaryData || len(boundaryIDs) == 0 {
 			continue
 		}
 		if err != nil {
@@ -169,7 +169,7 @@ func (q *QueryExecution) executeChildStep(ctx context.Context, step QueryPlanSte
 
 	for _, childStep := range step.Then {
 		boundaryIDs, err := extractBoundaryIDs(data, childStep.InsertionPoint[1:]) // FIXME: validate this always holds true
-		if err == errNilBoundaryData {
+		if err == errNilBoundaryData || len(boundaryIDs) == 0 {
 			continue
 		}
 		if err != nil {
@@ -540,6 +540,9 @@ func getBoundaryFieldResults(src interface{}) ([]map[string]interface{}, error) 
 	}
 	var result []map[string]interface{}
 	for i, element := range slice {
+		if element == nil {
+			continue
+		}
 		elementMap, ok := element.(map[string]interface{})
 		if !ok {
 			return nil, fmt.Errorf("getBoundaryFieldResults: expect value at index %d to be map[string]interface{}' but got '%T'", i, element)
@@ -690,7 +693,7 @@ func formatResponseDataRec(schema *ast.Schema, selectionSet ast.SelectionSet, re
 					return "", errors.New("expected typename")
 				}
 
-				currentTypeIsInterface := selection.ObjectDefinition.IsAbstractType()
+				currentTypeIsInterface := selection.ObjectDefinition.Kind == ast.Interface
 				fragmentImplementsInterface := currentTypeIsInterface &&
 					implementsInterface(schema, typename, selection.ObjectDefinition.Name)
 				resultObjectTypeMatchesFragment := selection.TypeCondition == typename
