@@ -203,9 +203,9 @@ func TestIntrospectionQuery(t *testing.T) {
 		}
 
 		fragment TypeInfo on __Type {
-				description
-				kind
-				name
+			description
+			kind
+			name
 		}
 		`)
 		ctx := testContextWithoutVariables(query.Operations[0])

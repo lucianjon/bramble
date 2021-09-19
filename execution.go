@@ -163,17 +163,6 @@ func (s *ExecutableSchema) ExecuteQuery(ctx context.Context) *graphql.Response {
 		filteredSchema = perms.FilterSchema(s.MergedSchema)
 	}
 
-	introspectionResult := make(map[string]interface{})
-	for _, f := range selectionSetToFields(op.SelectionSet) {
-		switch f.Name {
-		case "__type":
-			name := f.Arguments.ForName("name").Value.Raw
-			introspectionResult[f.Alias] = s.resolveType(ctx, filteredSchema, &ast.Type{NamedType: name}, f.SelectionSet)
-		case "__schema":
-			introspectionResult[f.Alias] = s.resolveSchema(ctx, filteredSchema, f.SelectionSet)
-		}
-	}
-
 	plan, err := Plan(&PlanningContext{
 		Operation:  op,
 		Schema:     s.Schema(),
@@ -213,7 +202,6 @@ func (s *ExecutableSchema) ExecuteQuery(ctx context.Context) *graphql.Response {
 		}
 	}
 
-	// FIXME: deal with the fact qe is a different type
 	for _, plugin := range s.plugins {
 		if err := plugin.ModifyExtensions(ctx, qe, extensions); err != nil {
 			AddField(ctx, fmt.Sprintf("%s-plugin-error", plugin.ID()), err.Error())
@@ -228,7 +216,11 @@ func (s *ExecutableSchema) ExecuteQuery(ctx context.Context) *graphql.Response {
 		errs = append(errs, result.Errors...)
 	}
 
-	results = append([]ExecutionResult{{Data: introspectionResult}}, results...)
+	introspectionResult := ExecutionResult{
+		Data: s.resolveIntrospectionFields(ctx, op.SelectionSet, filteredSchema),
+	}
+
+	results = append([]ExecutionResult{introspectionResult}, results...)
 
 	mergedResult, err := mergeExecutionResults(results)
 	if err != nil {
@@ -268,7 +260,6 @@ func (s *ExecutableSchema) ExecuteQuery(ctx context.Context) *graphql.Response {
 		Data:   []byte(formattedResponse),
 		Errors: errs,
 	}
-
 }
 
 // TraceIDFromContext retrieves the trace ID from the context if it exists.
@@ -294,6 +285,21 @@ func (s *ExecutableSchema) Schema() *ast.Schema {
 func (s *ExecutableSchema) Complexity(typeName, fieldName string, childComplexity int, args map[string]interface{}) (int, bool) {
 	// FIXME: TBD
 	return 0, false
+}
+
+func (s *ExecutableSchema) resolveIntrospectionFields(ctx context.Context, selectionSet ast.SelectionSet, filteredSchema *ast.Schema) map[string]interface{} {
+	introspectionResult := make(map[string]interface{})
+	for _, f := range selectionSetToFields(selectionSet) {
+		switch f.Name {
+		case "__type":
+			name := f.Arguments.ForName("name").Value.Raw
+			introspectionResult[f.Alias] = s.resolveType(ctx, filteredSchema, &ast.Type{NamedType: name}, f.SelectionSet)
+		case "__schema":
+			introspectionResult[f.Alias] = s.resolveSchema(ctx, filteredSchema, f.SelectionSet)
+		}
+	}
+
+	return introspectionResult
 }
 
 func (s *ExecutableSchema) resolveSchema(ctx context.Context, schema *ast.Schema, selectionSet ast.SelectionSet) map[string]interface{} {
@@ -755,6 +761,17 @@ func buildInsertionSlice(insertionPoint []string, in interface{}) []insertionTar
 	}
 }
 
+func (s *ExecutableSchema) evaluateSkipAndInclude(vars map[string]interface{}, op *ast.OperationDefinition) *ast.OperationDefinition {
+	return &ast.OperationDefinition{
+		Operation:           op.Operation,
+		Name:                op.Name,
+		VariableDefinitions: op.VariableDefinitions,
+		Directives:          op.Directives,
+		SelectionSet:        s.evaluateSkipAndIncludeRec(vars, op.SelectionSet),
+		Position:            op.Position,
+	}
+}
+
 func (s *ExecutableSchema) evaluateSkipAndIncludeRec(vars map[string]interface{}, selectionSet ast.SelectionSet) ast.SelectionSet {
 	if selectionSet == nil {
 		return nil
@@ -821,17 +838,6 @@ func (s *ExecutableSchema) evaluateSkipAndIncludeRec(vars map[string]interface{}
 		}
 	}
 	return result
-}
-
-func (s *ExecutableSchema) evaluateSkipAndInclude(vars map[string]interface{}, op *ast.OperationDefinition) *ast.OperationDefinition {
-	return &ast.OperationDefinition{
-		Operation:           op.Operation,
-		Name:                op.Name,
-		VariableDefinitions: op.VariableDefinitions,
-		Directives:          op.Directives,
-		SelectionSet:        s.evaluateSkipAndIncludeRec(vars, op.SelectionSet),
-		Position:            op.Position,
-	}
 }
 
 func removeSkipAndInclude(directives ast.DirectiveList) ast.DirectiveList {

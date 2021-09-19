@@ -82,9 +82,11 @@ func (q *QueryExecution) Execute(ctx context.Context, queryPlan QueryPlan) ([]Ex
 	}()
 
 	if err := group.Wait(); err != nil {
-		return nil, gqlerror.List{&gqlerror.Error{
-			Message: err.Error(),
-		}}
+		return nil, gqlerror.List{
+			&gqlerror.Error{
+				Message: err.Error(),
+			},
+		}
 	}
 	close(resultsChan)
 	readWg.Wait()
