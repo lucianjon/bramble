@@ -2839,118 +2839,118 @@ func TestQueryExecutionMultipleServicesWithEmptyArray(t *testing.T) {
 	f.checkSuccess(t)
 }
 
-// FIXME: we do not handle nested arrays
-// func TestQueryExecutionMultipleServicesWithNestedArrays(t *testing.T) {
-// 	schema1 := `directive @boundary on OBJECT | FIELD_DEFINITION
+// FIXME: more robust testing around nested arrays
+func TestQueryExecutionMultipleServicesWithNestedArrays(t *testing.T) {
+	schema1 := `directive @boundary on OBJECT | FIELD_DEFINITION
 
-// 				type Movie @boundary {
-// 					id: ID!
-// 					title: String
-// 				}
+				type Movie @boundary {
+					id: ID!
+					title: String
+				}
 
-// 				type Query {
-// 					_movie(id: ID!): Movie @boundary
-// 					movie(id: ID!): Movie!
-// 			}`
-// 	services := []testService{
-// 		{
-// 			schema: schema1,
-// 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-// 				var req map[string]string
-// 				json.NewDecoder(r.Body).Decode(&req)
-// 				query := gqlparser.MustLoadQuery(gqlparser.MustLoadSchema(&ast.Source{Input: schema1}), req["query"])
-// 				var ids []string
-// 				for _, s := range query.Operations[0].SelectionSet {
-// 					ids = append(ids, s.(*ast.Field).Arguments[0].Value.Raw)
-// 				}
-// 				if query.Operations[0].SelectionSet[0].(*ast.Field).Name == "_movie" {
-// 					var res string
-// 					for i, id := range ids {
-// 						if i != 0 {
-// 							res += ","
-// 						}
-// 						res += fmt.Sprintf(`
-// 								"_%d": {
-// 									"id": "%s",
-// 									"title": "title %s"
-// 								}`, i, id, id)
-// 					}
-// 					w.Write([]byte(fmt.Sprintf(`{ "data": { %s } }`, res)))
-// 				} else {
-// 					w.Write([]byte(fmt.Sprintf(`{
-// 							"data": {
-// 								"movie": {
-// 									"id": "%s",
-// 									"title": "title %s"
-// 								}
-// 							}
-// 						}`, ids[0], ids[0])))
-// 				}
-// 			}),
-// 		},
-// 		{
-// 			schema: `directive @boundary on OBJECT | FIELD_DEFINITION
+				type Query {
+					_movie(id: ID!): Movie @boundary
+					movie(id: ID!): Movie!
+			}`
+	services := []testService{
+		{
+			schema: schema1,
+			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var req map[string]string
+				json.NewDecoder(r.Body).Decode(&req)
+				query := gqlparser.MustLoadQuery(gqlparser.MustLoadSchema(&ast.Source{Input: schema1}), req["query"])
+				var ids []string
+				for _, s := range query.Operations[0].SelectionSet {
+					ids = append(ids, s.(*ast.Field).Arguments[0].Value.Raw)
+				}
+				if query.Operations[0].SelectionSet[0].(*ast.Field).Name == "_movie" {
+					var res string
+					for i, id := range ids {
+						if i != 0 {
+							res += ","
+						}
+						res += fmt.Sprintf(`
+								"_%d": {
+									"id": "%s",
+									"title": "title %s"
+								}`, i, id, id)
+					}
+					w.Write([]byte(fmt.Sprintf(`{ "data": { %s } }`, res)))
+				} else {
+					w.Write([]byte(fmt.Sprintf(`{
+							"data": {
+								"movie": {
+									"id": "%s",
+									"title": "title %s"
+								}
+							}
+						}`, ids[0], ids[0])))
+				}
+			}),
+		},
+		{
+			schema: `directive @boundary on OBJECT | FIELD_DEFINITION
 
-// 			type Movie @boundary {
-// 				id: ID!
-// 				compTitles: [[Movie]]
-// 			}
+			type Movie @boundary {
+				id: ID!
+				compTitles: [[Movie]]
+			}
 
-// 			type Query {
-// 				movie(id: ID!): Movie @boundary
-// 			}`,
-// 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-// 				w.Write([]byte(`{
-// 					"data": {
-// 						"_0": {
-// 							"id": "1",
-// 							"compTitles": [[
-// 								{
-// 									"id": "2"
-// 								},
-// 								{
-// 									"id": "3"
-// 								}
-// 							]]
-// 						}
-// 					}
-// 				}`))
-// 			}),
-// 		},
-// 	}
+			type Query {
+				movie(id: ID!): Movie @boundary
+			}`,
+			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Write([]byte(`{
+					"data": {
+						"_0": {
+							"id": "1",
+							"compTitles": [[
+								{
+									"id": "2"
+								},
+								{
+									"id": "3"
+								}
+							]]
+						}
+					}
+				}`))
+			}),
+		},
+	}
 
-// 	f := &queryExecutionFixture{
-// 		services: services,
-// 		query: `{
-// 		movie(id: "1") {
-// 			id
-// 			title
-// 			compTitles {
-// 				id
-// 				title
-// 			}
-// 		}
-// 	}`,
-// 		expected: `{
-// 		"movie": {
-// 			"id": "1",
-// 			"title": "title 1",
-// 			"compTitles": [[
-// 				{
-// 					"id": "2",
-// 					"title": "title 2"
-// 				},
-// 				{
-// 					"id": "3",
-// 					"title": "title 3"
-// 				}
-// 			]]
-// 		}
-// 		}`,
-// 	}
+	f := &queryExecutionFixture{
+		services: services,
+		query: `{
+		movie(id: "1") {
+			id
+			title
+			compTitles {
+				id
+				title
+			}
+		}
+	}`,
+		expected: `{
+		"movie": {
+			"id": "1",
+			"title": "title 1",
+			"compTitles": [[
+				{
+					"id": "2",
+					"title": "title 2"
+				},
+				{
+					"id": "3",
+					"title": "title 3"
+				}
+			]]
+		}
+		}`,
+	}
 
-// 	f.checkSuccess(t)
-// }
+	f.checkSuccess(t)
+}
 
 func TestQueryExecutionEmptyBoundaryResponse(t *testing.T) {
 	f := &queryExecutionFixture{

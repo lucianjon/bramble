@@ -487,6 +487,10 @@ func mergeExecutionResultsRec(src interface{}, dst interface{}, insertionPoint [
 				}
 
 			}
+		case []interface{}:
+			for _, innerPtr := range ptr {
+				mergeExecutionResultsRec(src, innerPtr, insertionPoint)
+			}
 		default:
 			return fmt.Errorf("mergeExecutionResultsRec: unxpected type '%T' for top-level merge", ptr)
 		}
@@ -510,8 +514,14 @@ func mergeExecutionResultsRec(src interface{}, dst interface{}, insertionPoint [
 		}
 	case []interface{}:
 		for _, innerPtr := range ptr {
-			if err := mergeExecutionResultsRec(src, innerPtr, insertionPoint[1:]); err != nil {
-				return err
+			switch innerPtr := innerPtr.(type) {
+			case map[string]interface{}:
+				if err := mergeExecutionResultsRec(src, innerPtr, insertionPoint[1:]); err != nil {
+					return err
+				}
+			default:
+				// FIXME: create test case to hit this, should be nested array
+				return fmt.Errorf("mergeExecutionResults: unexpected type '%T' inside mid-level array", innerPtr)
 			}
 		}
 	default:
