@@ -2291,6 +2291,63 @@ func TestFormatResponseBody(t *testing.T) {
 		require.JSONEq(t, expectedJSON, bodyJSON)
 	})
 
+	t.Run("null data", func(t *testing.T) {
+		ddl := `
+		type Gizmo {
+			id: ID!
+			color: String!
+			owner: Owner
+		}
+
+		type Owner {
+			id: ID!
+			name: String
+		}
+
+		type Query {
+			gizmos: [Gizmo!]!
+			gizmo: Gizmo!
+		}`
+
+		result := jsonToInterfaceMap(`
+			{
+				"gizmos": [
+					{ "color": "RED","owner": null, "id": "GIZMO1" },
+					{ "color": "BLUE","owner": { "name": "Owner2", "id": "2" }, "id": "GIZMO2" },
+					{ "color": "GREEN","owner": { "name": null, "id": "3" }, "id": "GIZMO3" }
+				]
+			}
+		`)
+
+		schema := gqlparser.MustLoadSchema(&ast.Source{Name: "fixture", Input: ddl})
+
+		query := `
+			{
+				gizmos {
+					id
+					color
+					owner {
+						id
+						name
+					}
+				}
+			}`
+
+		expectedJSON := `
+			{
+				"gizmos": [
+					{ "id": "GIZMO1", "color": "RED", "owner": null },
+					{ "id": "GIZMO2", "color": "BLUE", "owner": { "id": "2", "name": "Owner2" } },
+					{ "id": "GIZMO3", "color": "GREEN", "owner": { "id": "3", "name": null } }
+				]
+			}`
+
+		document := gqlparser.MustLoadQuery(schema, query)
+		bodyJSON, err := formatResponseBody(schema, document.Operations[0].SelectionSet, result)
+		require.NoError(t, err)
+		require.JSONEq(t, expectedJSON, bodyJSON)
+	})
+
 	t.Run("simple response with errors", func(t *testing.T) {
 		ddl := `
 		type Gizmo {
