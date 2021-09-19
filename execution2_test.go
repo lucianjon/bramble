@@ -550,6 +550,7 @@ func TestQueryError(t *testing.T) {
 			},
 			&gqlerror.Error{
 				Message: `got a null response for non-nullable field "movie"`,
+				Path:    ast.Path{ast.PathName("movie")},
 			},
 		},
 	}
@@ -1885,7 +1886,7 @@ func TestBubbleUpNullValuesInPlace(t *testing.T) {
 		document := gqlparser.MustLoadQuery(schema, query)
 		errs, err := bubbleUpNullValuesInPlace(schema, document.Operations[0].SelectionSet, result)
 		require.Equal(t, errNullBubbledToRoot, err)
-		require.Nil(t, errs)
+		require.Len(t, errs, 1)
 	})
 
 	t.Run("1 expected null (bubble to middle)", func(t *testing.T) {
@@ -1929,7 +1930,12 @@ func TestBubbleUpNullValuesInPlace(t *testing.T) {
 		document := gqlparser.MustLoadQuery(schema, query)
 		errs, err := bubbleUpNullValuesInPlace(schema, document.Operations[0].SelectionSet, result)
 		require.NoError(t, err)
-		require.Equal(t, GraphqlErrors([]GraphqlError{{Message: "field failed to resolve", Path: ast.Path{ast.PathName("gizmos"), ast.PathIndex(2), ast.PathName("color")}, Extensions: nil}}), errs)
+		require.Equal(t, []*gqlerror.Error([]*gqlerror.Error{
+			{
+				Message:    `got a null response for non-nullable field "color"`,
+				Path:       ast.Path{ast.PathName("gizmos"), ast.PathIndex(2), ast.PathName("color")},
+				Extensions: nil,
+			}}), errs)
 		require.Equal(t, jsonToInterfaceMap(`{ "gizmos": null }`), result)
 	})
 
@@ -1974,7 +1980,12 @@ func TestBubbleUpNullValuesInPlace(t *testing.T) {
 		document := gqlparser.MustLoadQuery(schema, query)
 		errs, err := bubbleUpNullValuesInPlace(schema, document.Operations[0].SelectionSet, result)
 		require.NoError(t, err)
-		require.Equal(t, GraphqlErrors([]GraphqlError{{Message: "field failed to resolve", Path: ast.Path{ast.PathName("gizmos"), ast.PathIndex(1), ast.PathName("color")}, Extensions: nil}}), errs)
+		require.Equal(t, []*gqlerror.Error([]*gqlerror.Error{
+			{
+				Message:    `got a null response for non-nullable field "color"`,
+				Path:       ast.Path{ast.PathName("gizmos"), ast.PathIndex(1), ast.PathName("color")},
+				Extensions: nil,
+			}}), errs)
 		require.Equal(t, jsonToInterfaceMap(`{ "gizmos": [ { "id": "GIZMO1", "color": "RED" }, null, { "id": "GIZMO2", "color": "GREEN" } ]	}`), result)
 	})
 
@@ -2069,7 +2080,12 @@ func TestBubbleUpNullValuesInPlace(t *testing.T) {
 
 		errs, err := bubbleUpNullValuesInPlace(schema, document.Operations[0].SelectionSet, result)
 		require.NoError(t, err)
-		require.Equal(t, GraphqlErrors([]GraphqlError{{Message: "field failed to resolve", Path: ast.Path{ast.PathName("gizmos"), ast.PathIndex(2), ast.PathName("color")}, Extensions: nil}}), errs)
+		require.Equal(t, []*gqlerror.Error([]*gqlerror.Error{
+			{
+				Message:    `got a null response for non-nullable field "color"`,
+				Path:       ast.Path{ast.PathName("gizmos"), ast.PathIndex(2), ast.PathName("color")},
+				Extensions: nil,
+			}}), errs)
 		require.Equal(t, jsonToInterfaceMap(`{ "gizmos": [ { "id": "GIZMO1", "color": "RED", "__typename": "Gizmo" }, { "id": "GIZMO2", "color": "GREEN", "__typename": "Gizmo" }, null ]	}`), result)
 	})
 
@@ -2117,7 +2133,12 @@ func TestBubbleUpNullValuesInPlace(t *testing.T) {
 		result := jsonToInterfaceMap(resultJSON)
 		errs, err := bubbleUpNullValuesInPlace(schema, document.Operations[0].SelectionSet, result)
 		require.NoError(t, err)
-		require.Equal(t, GraphqlErrors([]GraphqlError{{Message: "field failed to resolve", Path: ast.Path{ast.PathName("gizmos"), ast.PathIndex(2), ast.PathName("color")}, Extensions: nil}}), errs)
+		require.Equal(t, []*gqlerror.Error([]*gqlerror.Error{
+			{
+				Message:    `got a null response for non-nullable field "color"`,
+				Path:       ast.Path{ast.PathName("gizmos"), ast.PathIndex(2), ast.PathName("color")},
+				Extensions: nil,
+			}}), errs)
 		require.Equal(t, jsonToInterfaceMap(`{ "gizmos": [ { "id": "GIZMO1", "color": "RED", "__typename": "Gizmo" }, { "id": "GIZMO2", "color": "GREEN", "__typename": "Gizmo" }, null ]	}`), result)
 	})
 
@@ -2171,7 +2192,12 @@ func TestBubbleUpNullValuesInPlace(t *testing.T) {
 		result := jsonToInterfaceMap(resultJSON)
 		errs, err := bubbleUpNullValuesInPlace(schema, document.Operations[0].SelectionSet, result)
 		require.NoError(t, err)
-		require.Equal(t, GraphqlErrors([]GraphqlError{{Message: "field failed to resolve", Path: ast.Path{ast.PathName("critters"), ast.PathIndex(2), ast.PathName("color")}, Extensions: nil}}), errs)
+		require.Equal(t, []*gqlerror.Error([]*gqlerror.Error{
+			{
+				Message:    `got a null response for non-nullable field "color"`,
+				Path:       ast.Path{ast.PathName("critters"), ast.PathIndex(2), ast.PathName("color")},
+				Extensions: nil,
+			}}), errs)
 		require.Equal(t, jsonToInterfaceMap(`{ "critters": [ { "id": "GIZMO1", "color": "RED", "__typename": "Gizmo"  }, { "id": "GREMLIN1", "name": "Spikey", "__typename": "Gremlin" }, null ]	}`), result)
 	})
 
@@ -2229,7 +2255,12 @@ func TestBubbleUpNullValuesInPlace(t *testing.T) {
 		result := jsonToInterfaceMap(resultJSON)
 		errs, err := bubbleUpNullValuesInPlace(schema, document.Operations[0].SelectionSet, result)
 		require.NoError(t, err)
-		require.Equal(t, GraphqlErrors([]GraphqlError{{Message: "field failed to resolve", Path: ast.Path{ast.PathName("critters"), ast.PathIndex(2), ast.PathName("color")}, Extensions: nil}}), errs)
+		require.Equal(t, []*gqlerror.Error([]*gqlerror.Error{
+			{
+				Message:    `got a null response for non-nullable field "color"`,
+				Path:       ast.Path{ast.PathName("critters"), ast.PathIndex(2), ast.PathName("color")},
+				Extensions: nil,
+			}}), errs)
 		require.Equal(t, jsonToInterfaceMap(`{ "critters": [ { "id": "GIZMO1", "color": "RED", "__typename": "Gizmo"  }, { "id": "GREMLIN1", "name": "Spikey", "__typename": "Gremlin" }, null ]	}`), result)
 	})
 }
@@ -2920,70 +2951,70 @@ func TestQueryExecutionMultipleServicesWithEmptyArray(t *testing.T) {
 // 	f.checkSuccess(t)
 // }
 
-// func TestQueryExecutionEmptyBoundaryResponse(t *testing.T) {
-// 	f := &queryExecutionFixture{
-// 		services: []testService{
-// 			{
-// 				schema: `directive @boundary on OBJECT | FIELD_DEFINITION
-// 				type Movie @boundary {
-// 					id: ID!
-// 					title: String
-// 				}
+func TestQueryExecutionEmptyBoundaryResponse(t *testing.T) {
+	f := &queryExecutionFixture{
+		services: []testService{
+			{
+				schema: `directive @boundary on OBJECT | FIELD_DEFINITION
+				type Movie @boundary {
+					id: ID!
+					title: String
+				}
 
-// 				type Query {
-// 					movie(id: ID!): Movie!
-// 				}`,
-// 				handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-// 					w.Write([]byte(`{
-// 						"data": {
-// 							"movie": {
-// 								"id": "1",
-// 								"title": "Test title"
-// 							}
-// 						}
-// 					}
-// 					`))
-// 				}),
-// 			},
-// 			{
-// 				schema: `directive @boundary on OBJECT | FIELD_DEFINITION
+				type Query {
+					movie(id: ID!): Movie!
+				}`,
+				handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Write([]byte(`{
+						"data": {
+							"movie": {
+								"id": "1",
+								"title": "Test title"
+							}
+						}
+					}
+					`))
+				}),
+			},
+			{
+				schema: `directive @boundary on OBJECT | FIELD_DEFINITION
 
-// 				type Movie @boundary {
-// 					id: ID!
-// 					release: Int
-// 				}
+				type Movie @boundary {
+					id: ID!
+					release: Int
+				}
 
-// 				type Query {
-// 					movie(id: ID!): Movie @boundary
-// 				}`,
-// 				handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-// 					w.Write([]byte(`{
-// 						"data": {
-// 							"_0": null
-// 						}
-// 					}
-// 					`))
-// 				}),
-// 			},
-// 		},
-// 		query: `{
-// 			movie(id: "1") {
-// 				id
-// 				title
-// 				release
-// 			}
-// 		}`,
-// 		expected: `{
-// 			"movie": {
-// 				"id": "1",
-// 				"title": "Test title",
-// 				"release": null
-// 			}
-// 		}`,
-// 	}
+				type Query {
+					movie(id: ID!): Movie @boundary
+				}`,
+				handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Write([]byte(`{
+						"data": {
+							"_0": null
+						}
+					}
+					`))
+				}),
+			},
+		},
+		query: `{
+			movie(id: "1") {
+				id
+				title
+				release
+			}
+		}`,
+		expected: `{
+			"movie": {
+				"id": "1",
+				"title": "Test title",
+				"release": null
+			}
+		}`,
+	}
 
-// 	f.checkSuccess(t)
-// }
+	f.checkSuccess(t)
+}
 
 // func TestQueryExecutionWithNullResponseAndSubBoundaryType(t *testing.T) {
 // 	f := &queryExecutionFixture{
@@ -4159,6 +4190,11 @@ func jsonEqWithOrder(t *testing.T, expected, actual string) {
 			return
 		}
 	}
+}
+
+func jsonPrettyPrint(in interface{}) string {
+	byt, _ := json.MarshalIndent(in, "", "  ")
+	return string(byt)
 }
 
 func assertQueriesEqual(t *testing.T, schema, expected, actual string) bool {

@@ -231,8 +231,7 @@ func (s *ExecutableSchema) ExecuteQuery(ctx context.Context) *graphql.Response {
 		}
 	}
 
-	// FIXME: deal with null bubbled to root and regular returned errors
-	_, err = bubbleUpNullValuesInPlace(qe.schema, op.SelectionSet, mergedResult)
+	bubbleErrs, err := bubbleUpNullValuesInPlace(qe.schema, op.SelectionSet, mergedResult)
 	if err == errNullBubbledToRoot {
 		mergedResult = nil
 	} else if err != nil {
@@ -242,6 +241,8 @@ func (s *ExecutableSchema) ExecuteQuery(ctx context.Context) *graphql.Response {
 			Errors: errs,
 		}
 	}
+
+	errs = append(errs, bubbleErrs...)
 
 	formattedResponse, err := formatResponseBody(qe.schema, op.SelectionSet, mergedResult)
 	if err != nil {

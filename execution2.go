@@ -558,18 +558,18 @@ func getBoundaryFieldResults(src interface{}) ([]map[string]interface{}, error) 
 // bubbleUpNullValuesInPlace checks for expected null values (as per schema) and bubbles them up if needed, and checks for
 // unexpected null values and returns errors for each (these unexpected nulls are also bubbled up).
 // See https://spec.graphql.org/June2018/#sec-Errors-and-Non-Nullability
-func bubbleUpNullValuesInPlace(schema *ast.Schema, selectionSet ast.SelectionSet, result map[string]interface{}) (GraphqlErrors, error) {
+func bubbleUpNullValuesInPlace(schema *ast.Schema, selectionSet ast.SelectionSet, result map[string]interface{}) ([]*gqlerror.Error, error) {
 	errs, bubbleUp, err := bubbleUpNullValuesInPlaceRec(schema, nil, selectionSet, result, ast.Path{})
 	if err != nil {
 		return nil, err
 	}
 	if bubbleUp {
-		return nil, errNullBubbledToRoot
+		return errs, errNullBubbledToRoot
 	}
 	return errs, nil
 }
 
-func bubbleUpNullValuesInPlaceRec(schema *ast.Schema, currentType *ast.Type, selectionSet ast.SelectionSet, result interface{}, path ast.Path) (errs GraphqlErrors, bubbleUp bool, err error) {
+func bubbleUpNullValuesInPlaceRec(schema *ast.Schema, currentType *ast.Type, selectionSet ast.SelectionSet, result interface{}, path ast.Path) (errs []*gqlerror.Error, bubbleUp bool, err error) {
 	switch result := result.(type) {
 	case map[string]interface{}:
 		for _, selection := range selectionSet {
@@ -582,7 +582,11 @@ func bubbleUpNullValuesInPlaceRec(schema *ast.Schema, currentType *ast.Type, sel
 				value := result[field.Alias]
 				if value == nil {
 					if field.Definition.Type.NonNull {
-						errs = append(errs, GraphqlError{Message: "field failed to resolve", Path: append(path, ast.PathName(field.Alias)), Extensions: nil})
+						errs = append(errs, &gqlerror.Error{
+							Message:    fmt.Sprintf("got a null response for non-nullable field %q", field.Alias),
+							Path:       append(path, ast.PathName(field.Alias)),
+							Extensions: nil,
+						})
 						bubbleUp = true
 					}
 					return
@@ -685,6 +689,9 @@ func formatResponseDataRec(schema *ast.Schema, selectionSet ast.SelectionSet, re
 	}
 	switch result := result.(type) {
 	case map[string]interface{}:
+		if len(result) == 0 {
+			return "null", nil
+		}
 		if !insideFragment {
 			buf.WriteString("{")
 		}
@@ -722,13 +729,11 @@ func formatResponseDataRec(schema *ast.Schema, selectionSet ast.SelectionSet, re
 			case *ast.Field:
 				field := selection
 				fieldData, ok := result[field.Alias]
-				// FIXME: should the bubbling not have taken care of this?
+
+				buf.WriteString(fmt.Sprintf(`"%s":`, field.Alias))
 				if !ok && selection.Definition.Type.NonNull {
 					return "", fmt.Errorf("got a null response for non-nullable field %q", field.Alias)
-				} else if !ok {
-					return "null", nil
 				}
-				buf.WriteString(fmt.Sprintf(`"%s":`, field.Alias))
 				if field.SelectionSet != nil {
 					innerBody, err := formatResponseDataRec(schema, field.SelectionSet, fieldData, false)
 					if err != nil {
