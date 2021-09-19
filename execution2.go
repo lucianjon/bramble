@@ -703,12 +703,12 @@ func formatResponseDataRec(schema *ast.Schema, selectionSet ast.SelectionSet, re
 					return "", errors.New("expected typename")
 				}
 
-				currentTypeIsInterface := selection.ObjectDefinition.Kind == ast.Interface
-				fragmentImplementsInterface := currentTypeIsInterface &&
+				currentTypeIsAbstract := selection.ObjectDefinition.IsAbstractType()
+				fragmentImplementsAbstractType := currentTypeIsAbstract &&
 					implementsInterface(schema, typename, selection.ObjectDefinition.Name)
 				resultObjectTypeMatchesFragment := selection.TypeCondition == typename
 
-				if fragmentImplementsInterface && !resultObjectTypeMatchesFragment {
+				if fragmentImplementsAbstractType && !resultObjectTypeMatchesFragment {
 					continue
 				}
 
@@ -731,8 +731,9 @@ func formatResponseDataRec(schema *ast.Schema, selectionSet ast.SelectionSet, re
 				fieldData, ok := result[field.Alias]
 
 				buf.WriteString(fmt.Sprintf(`"%s":`, field.Alias))
-				if !ok && selection.Definition.Type.NonNull {
-					return "", fmt.Errorf("got a null response for non-nullable field %q", field.Alias)
+				if !ok {
+					buf.WriteString("null")
+					break
 				}
 				if field.SelectionSet != nil {
 					innerBody, err := formatResponseDataRec(schema, field.SelectionSet, fieldData, false)
