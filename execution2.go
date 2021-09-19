@@ -52,16 +52,18 @@ func (q *QueryExecution) Execute(ctx context.Context, queryPlan QueryPlan) ([]Ex
 	results := []ExecutionResult{}
 
 	if len(queryPlan.RootSteps) > int(q.maxRequest) {
-		return nil, gqlerror.List{&gqlerror.Error{
-			Message: fmt.Sprintf("exceeded max requests of %v", q.maxRequest),
-		}}
+		return nil, gqlerror.List{
+			&gqlerror.Error{
+				Message: fmt.Sprintf("exceeded max requests of %v", q.maxRequest),
+			},
+		}
 	}
 
 	for _, step := range queryPlan.RootSteps {
 		if step.ServiceURL == internalServiceName {
 			r, err := ExecuteBrambleStep(step)
 			if err != nil {
-				return nil, q.createGQLErrors(ctx, *step, err)
+				return nil, q.createGQLErrors(ctx, step, err)
 			}
 			results = append(results, *r)
 			continue
@@ -69,7 +71,7 @@ func (q *QueryExecution) Execute(ctx context.Context, queryPlan QueryPlan) ([]Ex
 
 		step := step
 		group.Go(func() error {
-			return q.ExecuteRootStep(ctx, *step, resultsChan, group)
+			return q.ExecuteRootStep(ctx, step, resultsChan, group)
 		})
 	}
 
@@ -93,7 +95,7 @@ func (q *QueryExecution) Execute(ctx context.Context, queryPlan QueryPlan) ([]Ex
 	return results, nil
 }
 
-func (q *QueryExecution) ExecuteRootStep(ctx context.Context, step QueryPlanStep, resultsChan chan ExecutionResult, group *errgroup.Group) error {
+func (q *QueryExecution) ExecuteRootStep(ctx context.Context, step *QueryPlanStep, resultsChan chan ExecutionResult, group *errgroup.Group) error {
 	var document string
 	if step.ParentType == "Query" {
 		document = "query " + formatSelectionSet(ctx, q.schema, step.SelectionSet)
@@ -131,15 +133,14 @@ func (q *QueryExecution) ExecuteRootStep(ctx context.Context, step QueryPlanStep
 		}
 
 		childStep := childStep
-
 		group.Go(func() error {
-			return q.executeChildStep(ctx, *childStep, boundaryIDs, resultsChan, group)
+			return q.executeChildStep(ctx, childStep, boundaryIDs, resultsChan, group)
 		})
 	}
 	return nil
 }
 
-func (q *QueryExecution) executeChildStep(ctx context.Context, step QueryPlanStep, boundaryIDs []string, resultsChan chan ExecutionResult, group *errgroup.Group) error {
+func (q *QueryExecution) executeChildStep(ctx context.Context, step *QueryPlanStep, boundaryIDs []string, resultsChan chan ExecutionResult, group *errgroup.Group) error {
 	atomic.AddInt32(&q.requestCount, 1)
 	if q.requestCount > q.maxRequest {
 		return fmt.Errorf("exceeded max requests of %v", q.maxRequest)
@@ -179,14 +180,14 @@ func (q *QueryExecution) executeChildStep(ctx context.Context, step QueryPlanSte
 		}
 		childStep := childStep
 		group.Go(func() error {
-			return q.executeChildStep(ctx, *childStep, boundaryIDs, resultsChan, group)
+			return q.executeChildStep(ctx, childStep, boundaryIDs, resultsChan, group)
 		})
 	}
 
 	return nil
 }
 
-func (e *QueryExecution) createGQLErrors(ctx context.Context, step QueryPlanStep, err error) gqlerror.List {
+func (e *QueryExecution) createGQLErrors(ctx context.Context, step *QueryPlanStep, err error) gqlerror.List {
 	var path ast.Path
 	for _, p := range step.InsertionPoint {
 		path = append(path, ast.PathName(p))
@@ -377,7 +378,7 @@ func extractBoundaryIDs(data interface{}, insertionPoint []string) ([]string, er
 	}
 }
 
-func buildBoundaryQueryDocuments(ctx context.Context, schema *ast.Schema, step QueryPlanStep, ids []string, parentTypeBoundaryField BoundaryField, batchSize int) ([]string, error) {
+func buildBoundaryQueryDocuments(ctx context.Context, schema *ast.Schema, step *QueryPlanStep, ids []string, parentTypeBoundaryField BoundaryField, batchSize int) ([]string, error) {
 	selectionSetQL := formatSelectionSetSingleLine(ctx, schema, step.SelectionSet)
 	if parentTypeBoundaryField.Array {
 		qids := []string{}

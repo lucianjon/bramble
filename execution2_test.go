@@ -1305,7 +1305,7 @@ func TestBuildBoundaryQueryDocuments(t *testing.T) {
 			ObjectDefinition: schema.Types["Owner"],
 		},
 	}
-	step := QueryPlanStep{
+	step := &QueryPlanStep{
 		ServiceURL:     "http://example.com:8080",
 		ServiceName:    "test",
 		ParentType:     "Gizmo",
@@ -1355,7 +1355,7 @@ func TestBuildNonArrayBoundaryQueryDocuments(t *testing.T) {
 			ObjectDefinition: schema.Types["Owner"],
 		},
 	}
-	step := QueryPlanStep{
+	step := &QueryPlanStep{
 		ServiceURL:     "http://example.com:8080",
 		ServiceName:    "test",
 		ParentType:     "Gizmo",
@@ -1405,7 +1405,7 @@ func TestBuildBatchedNonArrayBoundaryQueryDocuments(t *testing.T) {
 			ObjectDefinition: schema.Types["Owner"],
 		},
 	}
-	step := QueryPlanStep{
+	step := &QueryPlanStep{
 		ServiceURL:     "http://example.com:8080",
 		ServiceName:    "test",
 		ParentType:     "Gizmo",
