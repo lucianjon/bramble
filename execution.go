@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"reflect"
 	"sync"
 	"time"
 
@@ -649,116 +648,6 @@ func mergeMaps(dst, src map[string]interface{}) {
 			continue
 		}
 		dst[k] = v
-	}
-}
-
-type insertionTarget struct {
-	ID     string
-	Target map[string]interface{}
-}
-
-// prepareMapForInsertion recursively traverses the result map to the insertion
-// point and unmarshals any json.RawMessage it finds on the way
-func prepareMapForInsertion(insertionPoint []string, in interface{}) interface{} {
-	if len(insertionPoint) == 0 {
-		switch in := in.(type) {
-		case json.RawMessage:
-			var i interface{}
-			_ = json.Unmarshal([]byte(in), &i)
-			switch i := i.(type) {
-			case map[string]interface{}, []interface{}:
-				return i
-			case nil:
-				return nil
-			default:
-				panic("unknown type after unmarshalling")
-			}
-		default:
-			return in
-		}
-	}
-
-	switch in := in.(type) {
-	case map[string]interface{}:
-		in[insertionPoint[0]] = prepareMapForInsertion(insertionPoint[1:], in[insertionPoint[0]])
-		return in
-	case json.RawMessage:
-		var m map[string]interface{}
-		_ = json.Unmarshal([]byte(in), &m)
-		if m == nil {
-			return nil
-		}
-		m[insertionPoint[0]] = prepareMapForInsertion(insertionPoint[1:], m[insertionPoint[0]])
-		return m
-	case []interface{}:
-		for i, e := range in {
-			in[i] = prepareMapForInsertion(insertionPoint, e)
-		}
-		return in
-	case nil:
-		return nil
-	default:
-		panic(fmt.Sprintf("unhandled type: %s", reflect.TypeOf(in).Name()))
-	}
-}
-
-// buildInsertionSlice returns the list of maps where the data should be inserted
-// It recursively traverses maps and list to find the insertion points.
-// For example, if we have "insertionPoint" [movie, compTitles] and "in"
-// movie { compTitles: [
-//	{ id: 1 },
-//  { id: 2 }
-// ] }
-// we want to return [{ id: 1 }, { id: 2 }]
-func buildInsertionSlice(insertionPoint []string, in interface{}) []insertionTarget {
-	if len(insertionPoint) == 0 {
-		switch in := in.(type) {
-		case map[string]interface{}:
-			eid := ""
-			if id, ok := in["_id"]; ok {
-				eid = id.(string)
-			} else if id, ok := in["id"]; ok {
-				eid = id.(string)
-			}
-
-			if eid == "" {
-				return nil
-			}
-
-			return []insertionTarget{{
-				ID:     eid,
-				Target: in,
-			}}
-		case []interface{}:
-			var result []insertionTarget
-			for _, e := range in {
-				result = append(result, buildInsertionSlice(insertionPoint, e)...)
-			}
-			return result
-		case json.RawMessage:
-			var m map[string]interface{}
-			_ = json.Unmarshal([]byte(in), &m)
-			return buildInsertionSlice(nil, m)
-		case nil:
-			return nil
-		default:
-			panic(fmt.Sprintf("unhandled insertion point type: %q", reflect.TypeOf(in).Name()))
-		}
-	}
-
-	switch in := in.(type) {
-	case map[string]interface{}:
-		return buildInsertionSlice(insertionPoint[1:], in[insertionPoint[0]])
-	case []interface{}:
-		var result []insertionTarget
-		for _, e := range in {
-			result = append(result, buildInsertionSlice(insertionPoint, e)...)
-		}
-		return result
-	case nil:
-		return nil
-	default:
-		panic(fmt.Sprintf("unhandled insertion point type: %s", reflect.TypeOf(in).Name()))
 	}
 }
 
