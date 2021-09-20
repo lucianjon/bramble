@@ -297,7 +297,7 @@ func BuildTypenameResponseMap(selectionSet ast.SelectionSet, parentTypeName stri
 				return nil, fmt.Errorf("expected named type")
 			}
 
-			// FIXME: why are the definitions always null
+			// FIXME: why are the directives always null, we want to check for the @namespace directive
 
 			var err error
 			result[field.Alias], err = BuildTypenameResponseMap(field.SelectionSet, field.Definition.Type.Name())
