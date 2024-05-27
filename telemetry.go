@@ -163,17 +163,17 @@ func newTraceProvider(exp sdktrace.SpanExporter, res *resource.Resource) (*sdktr
 	// This is useful for sampling traces based on the sampling decision of the
 	// upstream service. We follow the default sampling strategy of the
 	// OpenTelemetry Sampler.
-	parentSamplers := []sdktrace.ParentBasedSamplerOption{
-		sdktrace.WithLocalParentSampled(sdktrace.AlwaysSample()),
-		sdktrace.WithLocalParentNotSampled(sdktrace.NeverSample()),
-		sdktrace.WithRemoteParentSampled(sdktrace.AlwaysSample()),
-		sdktrace.WithRemoteParentNotSampled(sdktrace.NeverSample()),
-	}
+	// parentSamplers := []sdktrace.ParentBasedSamplerOption{
+	// 	sdktrace.WithLocalParentSampled(sdktrace.AlwaysSample()),
+	// 	sdktrace.WithLocalParentNotSampled(sdktrace.NeverSample()),
+	// 	sdktrace.WithRemoteParentSampled(sdktrace.AlwaysSample()),
+	// 	sdktrace.WithRemoteParentNotSampled(sdktrace.NeverSample()),
+	// }
 
 	traceProvider := sdktrace.NewTracerProvider(
 		// By default we'll trace all requests if not parent trace is found.
 		// Otherwise we follow the rules from above.
-		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.AlwaysSample(), parentSamplers...)),
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
 		sdktrace.WithResource(res),
 		sdktrace.WithSpanProcessor(sdktrace.NewBatchSpanProcessor(exp)),
 	)
